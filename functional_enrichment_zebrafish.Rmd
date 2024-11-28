@@ -1,0 +1,417 @@
+---
+title: "Functional Enrichment Analysis"
+subtitle: "Zebrafish RNA-Seq Analysis"
+author: "Janiel Thompson"
+output:
+  html_document:
+    df_print: paged
+  html_notebook: default
+  pdf_document: default
+---
+
+
+```{r LoadPackages, echo=F, message=F, warning=F}
+
+library(clusterProfiler)
+library(DOSE)
+library(DT)
+library(dplyr)
+library(gprofiler2)
+library(ggplot2)
+library(ggVennDiagram)
+library(org.Hs.eg.db)
+library(stringr)
+
+```
+
+
+### Experiment Design
+
+3 replicates for each of the 5 conditions below were prepared and each RNA-seq library was sequenced at an average depth of 24.3 million read pairs:
+- Control - untreated zebrafish embryos
+- BMAA - zebrafish embryos given BMAA toxin to induce neurodegenerative symptoms
+- CNR-401 - toxified zebrafish embryos subsequently given CNR-401 as treatment
+- Pure Cannflavin A (CNR-402) - toxified zebrafish embryos subsequently given pure cannflavin A as treatment
+- Edaravone - toxified zebrafish embryos subsequently given Edaravone as treatment
+
+Raw reads were trimmed and mapped to the zebrafish reference genome with an average of 19.8 million read pairs mapped per sample
+
+Pair-wise differential gene expression analysis was done using DESeq2 for all 10 sample pairs, producing differential gene expression (DGE) data. 
+
+The structure of the files is shown below using the BMAA vs BMAA-CNR-401 file as an example. 
+
+```{r LoadData, echo=F, warning=F}
+
+# Read in DGE comparison files
+# 4 of the 10 files comparing each condition to BMAA will be used in the analysis
+
+# BMAA vs CNR401
+bmaa.als <- read.csv("../DGE Comparisons/BMAA_vs_BMAA_ALS.csv")
+
+# BMAA vs Edaravone
+bmaa.eda <- read.csv("../DGE Comparisons/BMAA_vs_BMAA_Eda.csv")
+
+# BMAA vs Pure
+bmaa.pure <- read.csv("../DGE Comparisons/BMAA_vs_BMAA_Pure.csv")
+
+# BMAA vs Control
+bmaa.ctrl <- read.csv("../DGE Comparisons/BMAA_vs_Control.csv")
+
+head(bmaa.als)
+
+```
+
+Each file starts with the same number of genes: `r nrow(bmaa.als)`
+
+Adding a column, "Expression", to signify whether a gene was upregulated or downregulated for additional context in the volcano plots. Significance is defined by an absolute log2 fold change greater than or equal to 0.5 AND an adjusted p-value less than 0.05.
+
+```{r AddExprColumn, echo=F, warning=F}
+
+# Add a column - "Expression" - to each DGE df with labels indicating whether gene is upregulated or downregulated
+
+bmaa.als <- bmaa.als %>%
+  mutate(Expression = case_when(log2FoldChange >= 0.5 & padj < 0.05 ~ "Upregulated",
+                            log2FoldChange <= -0.5 & padj < 0.05 ~ "Downregulated",
+                            TRUE ~ "Not Significant")) 
+
+bmaa.eda <- bmaa.eda %>%
+  mutate(Expression = case_when(log2FoldChange >= 0.5 & padj < 0.05 ~ "Upregulated",
+                            log2FoldChange <= -0.5 & padj < 0.05 ~ "Downregulated",
+                            TRUE ~ "Not Significant")) 
+
+bmaa.pure <- bmaa.pure %>%
+  mutate(Expression = case_when(log2FoldChange >= 0.5 & padj < 0.05 ~ "Upregulated",
+                            log2FoldChange <= -0.5 & padj < 0.05 ~ "Downregulated",
+                            TRUE ~ "Not Significant")) 
+
+bmaa.ctrl <- bmaa.ctrl %>%
+  mutate(Expression = case_when(log2FoldChange >= 0.5 & padj < 0.05 ~ "Upregulated",
+                            log2FoldChange <= -0.5 & padj < 0.05 ~ "Downregulated",
+                            TRUE ~ "Not Significant")) 
+
+head(bmaa.als)
+```
+
+
+### Data Analysis
+
+The volcano plots below display the results of RNA-seq experiments to show the statistical significance (adjusted P value) versus magnitude of change (log 2 fold change). The CNR-401 plot shows a vast number of differentially expressed genes (DEG) following treatment. Genes that are not significant are shown as grey points. 
+
+```{r VolcanoPlots, echo=F, warning=F}
+
+# Define colours, sizes, and transparency for points in volcano plot
+cols <- c("Upregulated" = "tomato2", "Downregulated" = "steelblue2", "Not Significant" = "grey") 
+sizes <- c("Upregulated" = 2, "Downregulated" = 2, "Not Significant" = 1) 
+alphas <- c("Upregulated" = 1, "Downregulated" = 1, "Not Significant" = 0.5)
+    
+# Create volcano plots showing DEGs, using log2fold change and adjusted p value
+
+bmaa.als %>%
+  ggplot(aes(x = log2FoldChange,
+             y = -log10(padj),
+             fill = Expression,    
+             size = Expression,
+             alpha = Expression)) + 
+  geom_point(shape = 21, # Specify shape and colour as fixed local parameters    
+             colour = "black") + 
+  geom_hline(yintercept = -log10(0.05),
+             linetype = "dashed") + 
+  geom_vline(xintercept = c(log2(0.5), log2(2)),
+             linetype = "dashed") +
+  scale_fill_manual(values = cols) + # Modify point colour
+  scale_size_manual(values = sizes) + # Modify point size
+  scale_alpha_manual(values = alphas) + # Modify point transparency
+  scale_x_continuous(breaks = c(seq(-10, 10, 2)),       
+                     limits = c(-5, 5)) +
+  theme(plot.title = element_text(hjust = 0.5)) + 
+  labs(x = "Log2 Fold Change", y = "-Log10 Adjusted P-value", title = "BMAA vs BMAA + CNR-401")
+
+
+bmaa.eda %>%
+  ggplot(aes(x = log2FoldChange,
+             y = -log10(padj),
+             fill = Expression,    
+             size = Expression,
+             alpha = Expression)) + 
+  geom_point(shape = 21, # Specify shape and colour as fixed local parameters    
+             colour = "black") + 
+  geom_hline(yintercept = -log10(0.05),
+             linetype = "dashed") + 
+  geom_vline(xintercept = c(log2(0.5), log2(2)),
+             linetype = "dashed") +
+  scale_fill_manual(values = cols) + # Modify point colour
+  scale_size_manual(values = sizes) + # Modify point size
+  scale_alpha_manual(values = alphas) + # Modify point transparency
+  scale_x_continuous(breaks = c(seq(-10, 10, 2)),       
+                     limits = c(-5, 5)) +
+  theme(plot.title = element_text(hjust = 0.5)) + 
+  labs(x = "Log2 Fold Change", y = "-Log10 Adjusted P-value", title = "BMAA vs BMAA + Edaravone")
+
+
+bmaa.pure %>%
+  ggplot(aes(x = log2FoldChange,
+             y = -log10(padj),
+             fill = Expression,    
+             size = Expression,
+             alpha = Expression)) + 
+  geom_point(shape = 21, # Specify shape and colour as fixed local parameters    
+             colour = "black") + 
+  geom_hline(yintercept = -log10(0.05),
+             linetype = "dashed") + 
+  geom_vline(xintercept = c(log2(0.5), log2(2)),
+             linetype = "dashed") +
+  scale_fill_manual(values = cols) + # Modify point colour
+  scale_size_manual(values = sizes) + # Modify point size
+  scale_alpha_manual(values = alphas) + # Modify point transparency
+  scale_x_continuous(breaks = c(seq(-10, 10, 2)),       
+                     limits = c(-5, 5)) +
+  theme(plot.title = element_text(hjust = 0.5)) + 
+  labs(x = "Log2 Fold Change", y = "-Log10 Adjusted P-value", title = "BMAA vs BMAA + CNR-402")
+
+
+bmaa.ctrl %>%
+  ggplot(aes(x = log2FoldChange,
+             y = -log10(padj),
+             fill = Expression,    
+             size = Expression,
+             alpha = Expression)) + 
+  geom_point(shape = 21, # Specify shape and colour as fixed local parameters    
+             colour = "black") + 
+  geom_hline(yintercept = -log10(0.05),
+             linetype = "dashed") + 
+  geom_vline(xintercept = c(log2(0.5), log2(2)),
+             linetype = "dashed") +
+  scale_fill_manual(values = cols) + # Modify point colour
+  scale_size_manual(values = sizes) + # Modify point size
+  scale_alpha_manual(values = alphas) + # Modify point transparency
+  scale_x_continuous(breaks = c(seq(-10, 10, 2)),       
+                     limits = c(-5, 5)) +
+  theme(plot.title = element_text(hjust = 0.5)) + 
+  labs(x = "Log2 Fold Change", y = "-Log10 Adjusted P-value", title = "BMAA vs Control")
+  
+
+```
+
+
+Using the DGE comparisons of **BMAA vs BMAA-401**, **BMAA vs BMAA-Edaravone**, and **BMAA vs BMAA-Pure**, differential expression was screened for biological and statistical significance using a adjusted p-value cutoff of 0.05, and a log2 fold change cutoff of 0.5.
+
+```{r L2FCCutoff, echo=F, warning=F}
+
+#Keep rows where absolute log 2 fold change is greater than or equal to 0.5 and adjusted pvalue is less than 0.05
+
+bmaa.als <- bmaa.als[which(abs(bmaa.als$log2FoldChange) >= 0.5 & bmaa.als$padj < 0.05),]
+bmaa.eda <- bmaa.eda[which(abs(bmaa.eda$log2FoldChange) >= 0.5 & bmaa.eda$padj < 0.05),]
+bmaa.pure <- bmaa.pure[which(abs(bmaa.pure$log2FoldChange) >= 0.5 & bmaa.pure$padj < 0.05),]
+bmaa.ctrl <- bmaa.ctrl[which(abs(bmaa.ctrl$log2FoldChange) >= 0.5 & bmaa.ctrl$padj < 0.05),]
+
+```
+
+
+```{r RemoveDups, echo=F, warning=F}
+
+# Remove rows where ensembl_gene_id is duplicated
+
+bmaa.als <- bmaa.als[!duplicated(bmaa.als$ensembl_gene_id),]
+bmaa.eda <- bmaa.eda[!duplicated(bmaa.eda$ensembl_gene_id),]
+bmaa.pure <- bmaa.pure[!duplicated(bmaa.pure$ensembl_gene_id),]
+bmaa.ctrl <- bmaa.ctrl[!duplicated(bmaa.ctrl$ensembl_gene_id),]
+
+```
+
+The number of genes remaining in each file are:  
+- BMAA vs BMAA-CNR-401: `r nrow(bmaa.als)`  
+- BMAA vs BMAA-Edaravone: `r nrow(bmaa.eda)`  
+- BMAA vs BMAA-PureCFA: `r nrow(bmaa.pure)`  
+- BMAA vs Control: `r nrow(bmaa.ctrl)`  
+
+
+GProfiler was used to map significant DEGs in each DGE comparison file to human orthologs. 
+
+```{r GOrth, echo=F, warning=F}
+
+# Get human orthologs using gprofiler2 package
+bmaa.als.gorth <- gorth(bmaa.als$ensembl_gene_id, source_organism = "drerio", target_organism = "hsapiens")
+bmaa.eda.gorth <- gorth(bmaa.eda$ensembl_gene_id, source_organism = "drerio", target_organism = "hsapiens")
+bmaa.pure.gorth <- gorth(bmaa.pure$ensembl_gene_id, source_organism = "drerio", target_organism = "hsapiens")
+bmaa.ctrl.gorth <- gorth(bmaa.ctrl$ensembl_gene_id, source_organism = "drerio", target_organism = "hsapiens")
+
+# Remove rows where ensembl_gene_id is duplicated
+bmaa.als.gorth2 <- bmaa.als.gorth %>% distinct(ortholog_name, .keep_all = T)
+bmaa.als.gorth2 <- bmaa.als.gorth2[!is.na(bmaa.als.gorth2$ortholog_ensg),]
+bmaa.eda.gorth2 <- bmaa.eda.gorth %>% distinct(ortholog_name, .keep_all = T)
+bmaa.pure.gorth2 <- bmaa.pure.gorth %>% distinct(ortholog_name, .keep_all = T)
+bmaa.ctrl.gorth2 <- bmaa.ctrl.gorth %>% distinct(ortholog_name, .keep_all = T)
+
+```
+
+
+#### BMAA vs BMAA-CNR-401
+```{r echo=F, message=F, warning=F}
+DT::datatable(bmaa.als.gorth2, rownames=F,options = list(scrollX = TRUE))
+```
+
+#### BMAA vs BMAA-Edaravone
+```{r echo=F, message=F, warning=F}
+DT::datatable(bmaa.eda.gorth2, rownames=F,options = list(scrollX = TRUE))
+```
+
+#### BMAA vs BMAA-PureCFA
+```{r echo=F, message=F, warning=F}
+DT::datatable(bmaa.pure.gorth2, rownames=F,options = list(scrollX = TRUE))
+```
+
+#### BMAA vs Control
+```{r echo=F, message=F, warning=F}
+DT::datatable(bmaa.ctrl.gorth2, rownames=F,options = list(scrollX = TRUE))
+```
+
+
+The Venn diagrams below represent the number of significantly differentially expressed genes after BMAA induction and after treatment (BMAA + CNR-401 / BMAA + Edaravone). A total of `r nrow(bmaa.als.gorth2)` genes differentially expressed with CNR-401 have human orthologs; `r nrow(bmaa.eda.gorth2)` genes differentially expressed with Edaravone have human orthologs
+
+```{r 401CtrlVenn, echo=F, warning=F}
+ggVennDiagram(list(bmaa.als.gorth2$ortholog_name, bmaa.ctrl.gorth2$ortholog_name), category.names = c("BMAA + CNR-401", "BMAA")) +
+  scale_x_continuous(expand = expansion(mult = .5)) + 
+  scale_fill_gradient(low = "snow", high = "snow3")
+```
+
+```{r EdaCtrlVenn, echo=F, warning=F}
+ggVennDiagram(list(bmaa.eda.gorth2$ortholog_name, bmaa.ctrl.gorth2$ortholog_name), category.names = c("BMAA + Edaravone", "BMAA")) +
+  scale_x_continuous(expand = expansion(mult = .5)) + 
+  scale_fill_gradient(low = "snow", high = "snow3")
+```
+
+
+Gene set enrichment analysis of the human orthologs of significant genes produces the following results:
+```{r GOEnrich, echo=F, warning=F}
+
+# Gene set enrichment analysis using human orthologs as the gene list
+
+als.gene.list <- bmaa.als.gorth2$ortholog_ensg
+als.go <- enrichGO(als.gene.list, pAdjustMethod = "BH", keyType = "ENSEMBL", ont = "ALL", pvalueCutoff = 0.05, OrgDb = "org.Hs.eg.db")
+
+eda.gene.list <- bmaa.eda.gorth2$ortholog_ensg
+eda.go <- enrichGO(eda.gene.list, pAdjustMethod = "BH", keyType = "ENSEMBL", ont = "ALL", pvalueCutoff = 0.05, OrgDb = "org.Hs.eg.db")
+
+bmaa.gene.list <- bmaa.ctrl.gorth2$ortholog_ensg
+bmaa.go <- enrichGO(bmaa.gene.list, pAdjustMethod = "BH", keyType = "ENSEMBL", ont = "ALL", pvalueCutoff = 0.05, OrgDb = "org.Hs.eg.db")
+
+```
+
+
+#### BMAA vs BMAA-CNR-401
+```{r echo=F}
+DT::datatable(als.go@result, rownames=F,options = list(scrollX = TRUE))
+```
+
+#### BMAA vs BMAA-Edaravone
+```{r echo=F}
+DT::datatable(eda.go@result, rownames=F,options = list(scrollX = TRUE))
+```
+
+#### BMAA vs Control
+```{r echo=F}
+DT::datatable(bmaa.go@result, rownames=F,options = list(scrollX = TRUE))
+```
+
+
+The following bar plots show the most significant biological process GO terms, i.e., with the lowest adjusted p-values.
+
+```{r SigGOTerms, echo=F, warning=F}
+
+als.go.result.sig <- als.go@result[order(als.go@result$p.adjust),]
+als.go.result.sig <- als.go.result.sig[which(als.go.result.sig$ONTOLOGY == "BP"),]
+als.go.result.sig <- als.go.result.sig[1:10,]
+
+ggplot(als.go.result.sig, aes(Description, Count)) +
+  geom_bar(aes(x = reorder(Description, FoldEnrichment), fill = p.adjust), stat = "identity") +
+  coord_flip() +
+  scale_fill_gradient(name = "P-adjusted", low = "mediumaquamarine", high = "#123233") +
+  labs(title = "BP GO Terms: BMAA vs BMAA + CNR-401", y = "Gene Count", x = "GO Term Description")
+
+
+eda.go.result.sig <- eda.go@result[order(eda.go@result$p.adjust),]
+eda.go.result.sig <- eda.go.result.sig[which(eda.go.result.sig$ONTOLOGY == "BP"),]
+eda.go.result.sig <- eda.go.result.sig[1:10,]
+
+ggplot(eda.go.result.sig, aes(Description, Count)) +
+  geom_bar(aes(x = reorder(Description, FoldEnrichment), fill = p.adjust), stat = "identity") +
+  coord_flip() +
+  scale_fill_gradient(name = "P-adjusted", low = "mediumaquamarine", high = "#123233") +
+  labs(title = "BP GO Terms: BMAA vs BMAA + Edaravone", y = "Gene Count", x = "GO Term Description")
+
+
+bmaa.go.result.sig <- bmaa.go@result[order(bmaa.go@result$p.adjust),]
+bmaa.go.result.sig <- bmaa.go.result.sig[which(bmaa.go.result.sig$ONTOLOGY == "BP"),]
+bmaa.go.result.sig <- bmaa.go.result.sig[1:10,]
+
+ggplot(bmaa.go.result.sig, aes(Description, Count)) +
+  geom_bar(aes(x = reorder(Description, FoldEnrichment), fill = p.adjust), stat = "identity") +
+  coord_flip() +
+  scale_fill_gradient(name = "P-adjusted", low = "mediumaquamarine", high = "#123233") +
+  labs(title = "BP GO Terms: BMAA vs Control", y = "Gene Count", x = "GO Term Description")
+
+```
+
+
+The following bar plots include select GO terms shared by CNR-401 and Edaravone.
+
+```{r SharedGOTerms, echo=F, warning=F}
+
+als.go.result <- als.go@result[als.go@result$Description %in% c("neuromuscular junction",
+                                                                "extracellular matrix organization",
+                                                                "cell-matrix adhesion",
+                                                                "response to mechanical stimulus",
+                                                                "muscle cell differentiation",
+                                                                "regulation of muscle contraction",
+                                                                "wound healing",
+                                                                "calcium ion transmembrane transport",
+                                                                "actomyosin structure organization",
+                                                                "response to growth hormone"),]
+
+
+ggplot(als.go.result, aes(Description, Count)) +
+  geom_bar(aes(fill = p.adjust), stat = "identity") +
+  coord_flip() +
+  scale_fill_gradient(name = "P-adjusted", low = "mediumaquamarine", high = "#123233") +
+  labs(title = "BP GO Terms: BMAA vs BMAA + CNR-401", y = "Gene Count", x = "GO Term Description")
+
+eda.go.result <- eda.go@result[eda.go@result$Description %in% c("neuromuscular junction",
+          "extracellular matrix organization",
+          "cell-matrix adhesion",
+          "response to mechanical stimulus",
+          "muscle cell differentiation",
+          "regulation of muscle contraction",
+          "wound healing",
+          "calcium ion transmembrane transport",
+          "actomyosin structure organization",
+          "response to growth hormone"),]
+
+
+ggplot(eda.go.result, aes(Description, Count)) +
+  geom_bar(aes(fill = p.adjust), stat = "identity") +
+  coord_flip() +
+  scale_fill_gradient(name = "P-adjusted", low = "mediumaquamarine", high = "#123233") +
+  labs(title = "BP GO Terms: BMAA vs BMAA + Edaravone", y = "Gene Count", x = "GO Term Description")
+
+```
+
+
+The bar plot below includes significant GO terms unique to CNR-401.
+
+```{r 401UniqueGO, echo=F, warning=F}
+
+als.go.result.unq <- als.go@result[als.go@result$Description %in% c("regulation of neurogenesis",
+                                                                    "axonogenesis",
+                                                                    "regulation of neuron apoptotic process",
+                                                                    "maintenance of blood-brain barrier",
+                                                                    "visual perception",
+                                                                    "synaptic transmission, glutamatergic"),]
+
+ggplot(als.go.result.unq, aes(Description, Count)) +
+  geom_bar(aes(fill = p.adjust), stat = "identity") +
+  coord_flip() +
+  scale_fill_gradient(name = "P-adjusted", low = "mediumaquamarine", high = "#123233") +
+  labs(title = "BP GO Terms: BMAA vs BMAA + CNR-401", y = "Gene Count", x = "GO Term Description")
+
+```
+

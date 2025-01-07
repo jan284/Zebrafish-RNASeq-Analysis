@@ -18,6 +18,7 @@ library(DT)
 library(dplyr)
 library(gprofiler2)
 library(ggplot2)
+library(ggrepel)
 library(ggVennDiagram)
 library(org.Hs.eg.db)
 library(stringr)
@@ -27,7 +28,7 @@ library(stringr)
 
 ### Experiment Design
 
-3 replicates for each of the 5 conditions below were prepared and each RNA-seq library was sequenced at an average depth of 24.3 million read pairs:
+6 replicates for each of the 5 conditions below were prepared and each RNA-seq library was sequenced at an average depth of 24.3 million read pairs:
 - Control - untreated zebrafish embryos
 - BMAA - zebrafish embryos given BMAA toxin to induce neurodegenerative symptoms
 - CNR-401 - toxified zebrafish embryos subsequently given CNR-401 as treatment
@@ -57,13 +58,26 @@ bmaa.pure <- read.csv("../DGE Comparisons/BMAA_vs_BMAA_Pure.csv")
 # BMAA vs Control
 bmaa.ctrl <- read.csv("../DGE Comparisons/BMAA_vs_Control.csv")
 
-head(bmaa.als)
+DT::datatable(head(bmaa.als), rownames=F,options = list(scrollX = TRUE))
 
 ```
 
 Each file starts with the same number of genes: `r nrow(bmaa.als)`
 
 Adding a column, "Expression", to signify whether a gene was upregulated or downregulated for additional context in the volcano plots. Significance is defined by an absolute log2 fold change greater than or equal to 0.5 AND an adjusted p-value less than 0.05.
+
+The structure of the files following this column addition is shown below using the BMAA vs BMAA-CNR-401 file as an example. 
+
+```{r RemoveDups, echo=F, warning=F}
+
+# Remove rows where ensembl_gene_id is duplicated
+
+bmaa.als <- bmaa.als[!duplicated(bmaa.als$ensembl_gene_id),]
+bmaa.eda <- bmaa.eda[!duplicated(bmaa.eda$ensembl_gene_id),]
+bmaa.pure <- bmaa.pure[!duplicated(bmaa.pure$ensembl_gene_id),]
+bmaa.ctrl <- bmaa.ctrl[!duplicated(bmaa.ctrl$ensembl_gene_id),]
+
+```
 
 ```{r AddExprColumn, echo=F, warning=F}
 
@@ -89,9 +103,8 @@ bmaa.ctrl <- bmaa.ctrl %>%
                             log2FoldChange <= -0.5 & padj < 0.05 ~ "Downregulated",
                             TRUE ~ "Not Significant")) 
 
-head(bmaa.als)
+DT::datatable(head(bmaa.als), rownames=F,options = list(scrollX = TRUE))
 ```
-
 
 ### Data Analysis
 
@@ -125,7 +138,7 @@ bmaa.als %>%
                      limits = c(-5, 5)) +
   theme(plot.title = element_text(hjust = 0.5)) + 
   labs(x = "Log2 Fold Change", y = "-Log10 Adjusted P-value", title = "BMAA vs BMAA + CNR-401")
-
+  
 
 bmaa.eda %>%
   ggplot(aes(x = log2FoldChange,
@@ -206,19 +219,7 @@ bmaa.ctrl <- bmaa.ctrl[which(abs(bmaa.ctrl$log2FoldChange) >= 0.5 & bmaa.ctrl$pa
 
 ```
 
-
-```{r RemoveDups, echo=F, warning=F}
-
-# Remove rows where ensembl_gene_id is duplicated
-
-bmaa.als <- bmaa.als[!duplicated(bmaa.als$ensembl_gene_id),]
-bmaa.eda <- bmaa.eda[!duplicated(bmaa.eda$ensembl_gene_id),]
-bmaa.pure <- bmaa.pure[!duplicated(bmaa.pure$ensembl_gene_id),]
-bmaa.ctrl <- bmaa.ctrl[!duplicated(bmaa.ctrl$ensembl_gene_id),]
-
-```
-
-The number of genes remaining in each file are:  
+The number of genes remaining in each file, i.e. the number of significantly differentially expressed genes:  
 - BMAA vs BMAA-CNR-401: `r nrow(bmaa.als)`  
 - BMAA vs BMAA-Edaravone: `r nrow(bmaa.eda)`  
 - BMAA vs BMAA-PureCFA: `r nrow(bmaa.pure)`  
@@ -242,8 +243,16 @@ bmaa.eda.gorth2 <- bmaa.eda.gorth %>% distinct(ortholog_name, .keep_all = T)
 bmaa.pure.gorth2 <- bmaa.pure.gorth %>% distinct(ortholog_name, .keep_all = T)
 bmaa.ctrl.gorth2 <- bmaa.ctrl.gorth %>% distinct(ortholog_name, .keep_all = T)
 
+# Exclude unnecessary rows from output
+exclude <- c("input_number", "input_ensg", "ensg_number")
+bmaa.als.gorth2 <- bmaa.als.gorth2[,!(names(bmaa.als.gorth2) %in% exclude)]
+bmaa.eda.gorth2 <- bmaa.eda.gorth2[,!(names(bmaa.eda.gorth2) %in% exclude)]
+bmaa.pure.gorth2 <- bmaa.pure.gorth2[,!(names(bmaa.pure.gorth2) %in% exclude)]
+bmaa.ctrl.gorth2 <- bmaa.ctrl.gorth2[,!(names(bmaa.ctrl.gorth2) %in% exclude)]
+
 ```
 
+### Significant Orthologs
 
 #### BMAA vs BMAA-CNR-401
 ```{r echo=F, message=F, warning=F}
@@ -265,6 +274,21 @@ DT::datatable(bmaa.pure.gorth2, rownames=F,options = list(scrollX = TRUE))
 DT::datatable(bmaa.ctrl.gorth2, rownames=F,options = list(scrollX = TRUE))
 ```
 
+The table below gives the list of genes differentially expressed orthologs following BMAA induction, and the respective expression changes for BMAA vs Control, BMAA vs BMAA-CNR401, and BMAA vs BMAA-Edaravone. 
+```{r ExpressionChanges, echo=F}
+
+expr.change <- as.data.frame(cbind(bmaa.ctrl.gorth2$input, bmaa.ctrl.gorth2$ortholog_name,
+                  bmaa.ctrl$Expression[match(bmaa.ctrl.gorth2$input, bmaa.ctrl$ensembl_gene_id)],
+                  bmaa.ctrl$log2FoldChange[match(bmaa.ctrl.gorth2$input, bmaa.ctrl$ensembl_gene_id)],
+                  bmaa.als$Expression[match(bmaa.ctrl.gorth2$input, bmaa.als$ensembl_gene_id)],
+                  bmaa.als$log2FoldChange[match(bmaa.ctrl.gorth2$input, bmaa.als$ensembl_gene_id)],
+                  bmaa.eda$Expression[match(bmaa.ctrl.gorth2$input, bmaa.eda$ensembl_gene_id)],
+                  bmaa.eda$log2FoldChange[match(bmaa.ctrl.gorth2$input, bmaa.eda$ensembl_gene_id)]))
+colnames(expr.change) <- c("Zebrafish Gene ID", "Ortholog Name", "BMAA vs Ctrl Change", "BMAA vs Ctrl L2FC", 
+                           "BMAA vs 401 Change", "BMAA vs 401 L2FC", "BMAA vs Edaravone Change", "BMAA vs Edaravone L2FC")
+DT::datatable(expr.change, rownames=F,options = list(scrollX = TRUE))
+
+```
 
 The Venn diagrams below represent the number of significantly differentially expressed genes after BMAA induction and after treatment (BMAA + CNR-401 / BMAA + Edaravone). A total of `r nrow(bmaa.als.gorth2)` genes differentially expressed with CNR-401 have human orthologs; `r nrow(bmaa.eda.gorth2)` genes differentially expressed with Edaravone have human orthologs
 
@@ -415,3 +439,29 @@ ggplot(als.go.result.unq, aes(Description, Count)) +
 
 ```
 
+### Orthologs of Significant Genes Unique to BMAA vs BMAA-CNR401
+```{r 401GOIs, echo=F}
+
+bmaa.als.gois <- as.data.frame(setdiff(bmaa.als.gorth2$ortholog_name, bmaa.eda.gorth2$ortholog_name))
+colnames(bmaa.als.gois) <- "ortholog_name"
+bmaa.als.gois$ortholog_id <- bmaa.als.gorth2$ortholog_ensg[match(bmaa.als.gois$ortholog_name, bmaa.als.gorth2$ortholog_name)]
+bmaa.als.gois$zebrafish_id <- bmaa.als.gorth2$input[match(bmaa.als.gois$ortholog_name, bmaa.als.gorth2$ortholog_name)]
+bmaa.als.gois$l2fc <- bmaa.als$log2FoldChange[match(bmaa.als.gois$zebrafish_id, bmaa.als$ensembl_gene_id)]
+bmaa.als.gois$abs_l2fc <- abs(bmaa.als$log2FoldChange[match(bmaa.als.gois$zebrafish_id, bmaa.als$ensembl_gene_id)])
+bmaa.als.gois$pvalue <- bmaa.als$pvalue[match(bmaa.als.gois$zebrafish_id, bmaa.als$ensembl_gene_id)]
+DT::datatable(bmaa.als.gois, rownames = F, options = list(scrollX = TRUE))
+
+```
+
+#### Genes of Potential Interest
+
+- HLA-DQA1: https://pmc.ncbi.nlm.nih.gov/articles/PMC9014537/
+- NOS2: https://www.mdpi.com/1422-0067/24/6/5651
+- NOXA1: https://www.sciencedirect.com/science/article/pii/S245183011931773X
+- PTAFR: https://pmc.ncbi.nlm.nih.gov/articles/PMC9096237/#:~:text=PTAFR%20was%20a%20potential%20biomarker,and%20drug%20discovery%20for%20AD.
+- DOCK2: https://www.frontiersin.org/journals/molecular-biosciences/articles/10.3389/fmolb.2022.997659/full
+- MIR199B: https://www.mdpi.com/2073-4425/13/6/1034
+- CCR6: https://www.mdpi.com/2073-4468/12/2/30
+- SLC41A2: https://pmc.ncbi.nlm.nih.gov/articles/PMC7236796/
+- MFN1: https://pmc.ncbi.nlm.nih.gov/articles/PMC10487704/
+- GPR4: https://pmc.ncbi.nlm.nih.gov/articles/PMC7589616/
